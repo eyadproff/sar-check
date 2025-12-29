@@ -13,8 +13,8 @@ CONFIG = {
         "to_station": "QUR",
         "from_name": "Riyadh",
         "to_name": "Qurayyat",
-        "start_date": "2025-03-03",
-        "end_date": "2025-03-20",
+        "start_date": "2025-02-03",
+        "end_date": "2025-02-20",
         "direction": "N"
     },
     "return": {
