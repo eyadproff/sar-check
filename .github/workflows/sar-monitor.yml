@@ -1,11 +1,9 @@
-
 name: SAR Ticket Availability Monitor
 
 on:
   schedule:
-    # Run every 30 minutes
     - cron: '*/30 * * * *'
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:
 
 jobs:
   monitor:
