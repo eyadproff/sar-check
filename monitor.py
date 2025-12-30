@@ -15,8 +15,8 @@ CONFIG = {
         "to_station": "QUR",
         "from_name": "Riyadh",
         "to_name": "Qurayyat",
-        "start_date": "2026-02-03",
-        "end_date": "2026-02-28",
+        "start_date": "2026-03-01",
+        "end_date": "2026-03-15",
         "direction": "N",
         "weekdays": [2, 3]  # Wednesday=2, Thursday=3
     },
@@ -26,7 +26,7 @@ CONFIG = {
         "from_name": "Qurayyat",
         "to_name": "Riyadh",
         "start_date": "2026-03-20",
-        "end_date": "2026-03-28",
+        "end_date": "2026-03-30",
         "direction": "N",
         "weekdays": [5]  # Saturday=5
     }
