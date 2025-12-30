@@ -17,7 +17,8 @@ CONFIG = {
         "to_name": "Qurayyat",
         "start_date": "2026-02-03",
         "end_date": "2026-02-28",
-        "direction": "N"
+        "direction": "N",
+        "weekdays": [2, 3]  # Wednesday=2, Thursday=3
     },
     "return": {
         "from_station": "QUR",
@@ -26,9 +27,13 @@ CONFIG = {
         "to_name": "Riyadh",
         "start_date": "2026-03-20",
         "end_date": "2026-03-28",
-        "direction": "N"
+        "direction": "N",
+        "weekdays": [5]  # Saturday=5
     }
 }
+
+# Weekday reference:
+# Monday=0, Tuesday=1, Wednesday=2, Thursday=3, Friday=4, Saturday=5, Sunday=6
 
 
 def build_search_url(from_station, to_station, date, direction="N"):
@@ -52,82 +57,87 @@ def build_search_url(from_station, to_station, date, direction="N"):
     return f"{base_url}?{query}"
 
 
-def generate_dates(start_date, end_date):
+def generate_dates(start_date, end_date, weekdays=None):
+    """
+    Generate dates between start and end.
+    If weekdays is provided, only include those days.
+    weekdays: list of integers (Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6)
+    """
     start = datetime.strptime(start_date, "%Y-%m-%d")
     end = datetime.strptime(end_date, "%Y-%m-%d")
     dates = []
     current = start
     while current <= end:
-        dates.append(current.strftime("%Y-%m-%d"))
+        # If weekdays filter is set, only include matching days
+        if weekdays is None or current.weekday() in weekdays:
+            dates.append(current.strftime("%Y-%m-%d"))
         current += timedelta(days=1)
     return dates
 
 
+def get_day_name(date_str):
+    """Get day name from date string"""
+    date = datetime.strptime(date_str, "%Y-%m-%d")
+    return date.strftime("%A")
+
+
 async def check_availability(page, url, route_name, date):
     try:
-        print(f"Checking {route_name} on {date}...")
+        day_name = get_day_name(date)
+        print(f"Checking {route_name} on {date} ({day_name})...")
         
-        # Navigate to page
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        
-        # Wait for content to load - SAR uses dynamic loading
         await page.wait_for_timeout(8000)
         
-        # Get full page text
         page_text = await page.inner_text("body")
         page_text_lower = page_text.lower()
         
-        # DEBUG: Print first part of page
-        print(f"  Page snippet: {page_text[:200].replace(chr(10), ' ')}")
+        print(f"  Page snippet: {page_text[:150].replace(chr(10), ' ')}")
         
-        # ============================================
-        # DETECTION LOGIC - Based on actual SAR site
-        # ============================================
+        # Detection methods based on actual SAR site
         
-        # Method 1: Look for "trips available" (exact text from SAR)
+        # Method 1: "trips available"
         if "trips available" in page_text_lower:
             print(f"  >> FOUND: 'trips available'")
-            return {"date": date, "route": route_name, "url": url, "reason": "trips available"}
+            return {"date": date, "day": day_name, "route": route_name, "url": url, "reason": "trips available"}
         
-        # Method 2: Look for train number pattern "Train XX"
+        # Method 2: Train number pattern
         train_match = re.search(r'train\s+\d+', page_text_lower)
         if train_match:
             print(f"  >> FOUND: '{train_match.group()}'")
-            return {"date": date, "route": route_name, "url": url, "reason": train_match.group()}
+            return {"date": date, "day": day_name, "route": route_name, "url": url, "reason": train_match.group()}
         
-        # Method 3: Look for ticket classes with prices
-        if ("economy" in page_text_lower and "business" in page_text_lower):
+        # Method 3: Ticket classes
+        if "economy" in page_text_lower and "business" in page_text_lower:
             print(f"  >> FOUND: Economy and Business classes")
-            return {"date": date, "route": route_name, "url": url, "reason": "ticket classes found"}
+            return {"date": date, "day": day_name, "route": route_name, "url": url, "reason": "ticket classes"}
         
-        # Method 4: Look for departure/arrival time pattern (HH:MM)
-        # SAR shows times like "21:00" and "07:33"
+        # Method 4: Time pattern (HH:MM)
         time_pattern = re.findall(r'\b([01]?[0-9]|2[0-3]):[0-5][0-9]\b', page_text)
         if len(time_pattern) >= 2:
             print(f"  >> FOUND: Times {time_pattern[:4]}")
-            return {"date": date, "route": route_name, "url": url, "reason": f"times: {time_pattern[:2]}"}
+            return {"date": date, "day": day_name, "route": route_name, "url": url, "reason": f"times: {time_pattern[:2]}"}
         
-        # Method 5: Look for "Select Outbound Trip" or "Select Return Trip"
+        # Method 5: Trip selection
         if "select outbound trip" in page_text_lower or "select return trip" in page_text_lower:
             print(f"  >> FOUND: Trip selection")
-            return {"date": date, "route": route_name, "url": url, "reason": "trip selection page"}
+            return {"date": date, "day": day_name, "route": route_name, "url": url, "reason": "trip selection"}
         
-        # Method 6: Look for price pattern (SAR prices like 185, 520, 1560)
+        # Method 6: Price pattern
         if re.search(r'\b(185|520|1560|125|80|90)\b', page_text):
             print(f"  >> FOUND: Price pattern")
-            return {"date": date, "route": route_name, "url": url, "reason": "prices found"}
+            return {"date": date, "day": day_name, "route": route_name, "url": url, "reason": "prices found"}
         
-        # Method 7: Look for "Night Trip" badge
+        # Method 7: Night Trip
         if "night trip" in page_text_lower:
             print(f"  >> FOUND: Night Trip")
-            return {"date": date, "route": route_name, "url": url, "reason": "night trip"}
+            return {"date": date, "day": day_name, "route": route_name, "url": url, "reason": "night trip"}
         
-        # Method 8: Look for stops info
+        # Method 8: Duration pattern
         if "stops" in page_text_lower and re.search(r'\d+\s*h\s*\d+\s*m', page_text_lower):
-            print(f"  >> FOUND: Journey duration and stops")
-            return {"date": date, "route": route_name, "url": url, "reason": "journey info found"}
+            print(f"  >> FOUND: Journey info")
+            return {"date": date, "day": day_name, "route": route_name, "url": url, "reason": "journey info"}
         
-        # No availability found
         print(f"  Not available")
         return None
         
@@ -144,7 +154,7 @@ def send_email(available_trips):
     if not sender_email or not sender_password:
         print("\nNo email configured. Available trips:")
         for trip in available_trips:
-            print(f"  {trip['date']} - {trip['route']}")
+            print(f"  {trip['date']} ({trip['day']}) - {trip['route']}")
             print(f"    {trip['url']}")
         return
     
@@ -153,11 +163,12 @@ def send_email(available_trips):
     body = "<html><body style='font-family:Arial'>"
     body += "<h2 style='color:green'>SAR Train Tickets Available!</h2>"
     body += "<table border='1' cellpadding='8' style='border-collapse:collapse'>"
-    body += "<tr style='background:#e8f5e9'><th>Date</th><th>Route</th><th>Book</th></tr>"
+    body += "<tr style='background:#e8f5e9'><th>Date</th><th>Day</th><th>Route</th><th>Book</th></tr>"
     
     for trip in available_trips:
         body += f"<tr>"
         body += f"<td><b>{trip['date']}</b></td>"
+        body += f"<td>{trip['day']}</td>"
         body += f"<td>{trip['route']}</td>"
         body += f"<td><a href='{trip['url']}'>Book Now</a></td>"
         body += f"</tr>"
@@ -202,13 +213,21 @@ async def main():
         
         page = await context.new_page()
         
-        # OUTBOUND: Riyadh to Qurayyat
+        # OUTBOUND: Riyadh to Qurayyat (Wednesdays & Thursdays only)
+        outbound_dates = generate_dates(
+            CONFIG['outbound']['start_date'],
+            CONFIG['outbound']['end_date'],
+            CONFIG['outbound']['weekdays']
+        )
+        
         print(f"\n{'='*40}")
         print(f"OUTBOUND: {CONFIG['outbound']['from_name']} to {CONFIG['outbound']['to_name']}")
         print(f"Dates: {CONFIG['outbound']['start_date']} to {CONFIG['outbound']['end_date']}")
+        print(f"Days: Wednesdays & Thursdays only")
+        print(f"Total dates to check: {len(outbound_dates)}")
         print(f"{'='*40}")
         
-        for date in generate_dates(CONFIG['outbound']['start_date'], CONFIG['outbound']['end_date']):
+        for date in outbound_dates:
             url = build_search_url(
                 CONFIG['outbound']['from_station'],
                 CONFIG['outbound']['to_station'],
@@ -221,13 +240,21 @@ async def main():
                 available_trips.append(result)
             await page.wait_for_timeout(3000)
         
-        # RETURN: Qurayyat to Riyadh
+        # RETURN: Qurayyat to Riyadh (Saturdays only)
+        return_dates = generate_dates(
+            CONFIG['return']['start_date'],
+            CONFIG['return']['end_date'],
+            CONFIG['return']['weekdays']
+        )
+        
         print(f"\n{'='*40}")
         print(f"RETURN: {CONFIG['return']['from_name']} to {CONFIG['return']['to_name']}")
         print(f"Dates: {CONFIG['return']['start_date']} to {CONFIG['return']['end_date']}")
+        print(f"Days: Saturdays only")
+        print(f"Total dates to check: {len(return_dates)}")
         print(f"{'='*40}")
         
-        for date in generate_dates(CONFIG['return']['start_date'], CONFIG['return']['end_date']):
+        for date in return_dates:
             url = build_search_url(
                 CONFIG['return']['from_station'],
                 CONFIG['return']['to_station'],
@@ -250,7 +277,7 @@ async def main():
     if available_trips:
         print(f"\nFOUND {len(available_trips)} AVAILABLE TRIPS:")
         for trip in available_trips:
-            print(f"  * {trip['date']} - {trip['route']} ({trip.get('reason', '')})")
+            print(f"  * {trip['date']} ({trip['day']}) - {trip['route']}")
         send_email(available_trips)
     else:
         print("\nNo tickets available at this time.")
